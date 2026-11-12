@@ -18,8 +18,21 @@ def post_json(url, headers, payload):
         with urllib.request.urlopen(req, timeout=60) as response:
             return json.load(response)
     except urllib.error.HTTPError as exc:
-        # Do not print response bodies: they may contain account or request data.
-        raise RuntimeError(f'Provider trả HTTP {exc.code}; kiểm tra model, key và quota.') from exc
+        # Provider error bodies usually explain whether the model, request, or
+        # account configuration was rejected. Keep the diagnostic short and
+        # never include request headers (which contain the API key).
+        try:
+            body = exc.read(4096).decode('utf-8', errors='replace')
+            payload = json.loads(body) if body else {}
+            error = payload.get('error', payload)
+            if isinstance(error, dict):
+                detail = error.get('message') or error.get('type') or error.get('code')
+            else:
+                detail = str(error)
+        except Exception:
+            detail = None
+        suffix = f': {str(detail)[:400]}' if detail else ''
+        raise RuntimeError(f'Provider trả HTTP {exc.code}{suffix}') from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f'Không kết nối được provider: {exc.reason}') from exc
 
